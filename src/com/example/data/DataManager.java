@@ -34,7 +34,6 @@ public class DataManager {
                 // Add variable (either replicated or not, based on the condition)
                 data.put(vid, new Variable(vid, initValue, isReplicated));
             }
-
             // Create lock table for each variable
             lockTable.put(vid, new LockManager(vid));
         }
@@ -200,7 +199,13 @@ public class DataManager {
     public void dump() {
         String siteStatus = isUp ? "up" : "down";
         StringBuilder output = new StringBuilder("site " + sid + " [" + siteStatus + "] - ");
-        for (Variable v : data.values()) {
+
+        ArrayList<String> sortedKeys = new ArrayList<String>(data.keySet());
+
+        sortedKeys.sort((s1, s2) -> (Integer.parseInt(s1.substring(1)) > Integer.parseInt(s2.substring(1))) ? 1 : -1);
+
+        for (String key : sortedKeys) {
+            Variable v = data.get(key);
             output.append(v.getVid()).append(": ").append(v.getLastCommitValue()).append(", ");
         }
         System.out.println(output.toString());
