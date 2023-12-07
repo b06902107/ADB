@@ -1,6 +1,10 @@
 package com.example;
 
+import com.example.data.DataError;
+import com.example.lock.LockError;
+import com.example.transaction.TransactionError;
 import com.example.transaction.TransactionManager;
+import com.example.utils.ParserError;
 
 import java.io.BufferedReader;
 import java.io.FileReader;
@@ -26,7 +30,7 @@ public class Main {
                 BufferedReader reader = new BufferedReader(new FileReader(inputFilePath));
                 String line;
                 while ((line = reader.readLine()) != null) {
-                    // manager.process(line);
+                    manager.process(line);
                 }
                 reader.close();
 
@@ -37,6 +41,14 @@ public class Main {
                 }
             } catch (IOException e) {
                 System.out.println("Error, cannot open " + inputFilePath);
+            } catch (DataError e) {
+                throw new RuntimeException(e);
+            } catch (ParserError e) {
+                throw new RuntimeException(e);
+            } catch (TransactionError e) {
+                throw new RuntimeException(e);
+            } catch (LockError e) {
+                throw new RuntimeException(e);
             }
         }
 
