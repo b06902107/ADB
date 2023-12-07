@@ -41,10 +41,9 @@ public class TransactionManager {
             executeOperations();
             System.out.println();
         }
-
         System.out.println("------- Time " + timestamp + " -------");
-        // processCommand(arguments);
-        // executeOperations();
+        processCommand(arguments);
+        executeOperations();
         timestamp++;
         System.out.println();
     }

@@ -21,7 +21,16 @@ public class Parser {
         List<String> result = new ArrayList<>();
 
         while (matcher.find()) {
-            result.add(matcher.group());
+            String temp = matcher.group();
+            if(temp.charAt(0) == '(' && temp.charAt(temp.length() - 1) == ')'){
+                String[] query = temp.substring(1, temp.length() - 1).split(",");
+                for (String a : query) {
+                    result.add(a);
+                }
+            }
+            else {
+                result.add(temp);
+            }
         }
 
         if (!commands.contains(result.get(0))) {
