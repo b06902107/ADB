@@ -1,1 +1,2 @@
 # ADB
+A distributed database
