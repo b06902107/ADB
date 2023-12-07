@@ -14,10 +14,10 @@ import java.util.Scanner;
 public class Main {
 
     public static void main(String[] args) {
-        TransactionManager manager = new TransactionManager();
-        Scanner scanner = new Scanner(System.in);
 
+        Scanner scanner = new Scanner(System.in);
         while (true) {
+            TransactionManager manager = new TransactionManager();
             System.out.println("Please input file path (or 'exit' to quit):");
             String inputFilePath = scanner.nextLine();
 

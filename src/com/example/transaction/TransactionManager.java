@@ -245,6 +245,7 @@ public class TransactionManager {
         for (int sid : targetSites) {
             DataManager targetSite = sites.get(sid - 1);  // Assuming site IDs start from 1
             targetSite.write(tid, vid, value);
+            transaction.getVisitedSites().add(sid);
         }
 
         System.out.println("Transaction " + tid + " writes variable " + vid + " with value " + value + " to sites " + targetSites);
