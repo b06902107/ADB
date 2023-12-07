@@ -331,4 +331,12 @@ public class DataManager {
         return isUp;
     }
 
+    public int getSid(){
+        return sid;
+    }
+
+    public Map<String, LockManager> getLockTable(){
+        return lockTable;
+    }
+
 }
