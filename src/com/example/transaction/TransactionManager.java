@@ -2,7 +2,6 @@ package com.example.transaction;
 import com.example.data.DataError;
 import com.example.data.DataManager;
 import com.example.data.ResultValue;
-import com.example.lock.LockError;
 
 import com.example.utils.DeadlockDetector;
 import com.example.utils.Parser;
@@ -32,7 +31,7 @@ public class TransactionManager {
         }
     }
 
-    public void process(String s) throws ParserError, LockError, DataError, TransactionError {
+    public void process(String s) throws ParserError, DataError, TransactionError {
         List<String> arguments = parser.parse(s);
         if (arguments == null || arguments.isEmpty()) {
             return;
@@ -49,7 +48,7 @@ public class TransactionManager {
         System.out.println();
     }
 
-    public void processCommand(List<String> arguments) throws TransactionError, LockError, DataError {
+    public void processCommand(List<String> arguments) throws TransactionError, DataError {
         String cmd = arguments.get(0);
 
         switch (cmd) {
@@ -98,7 +97,7 @@ public class TransactionManager {
         }
     }
 
-    public void executeOperations() throws TransactionError, DataError, LockError {
+    public void executeOperations() throws TransactionError, DataError {
         Iterator<Operation> iterator = operations.iterator();
 
         while (iterator.hasNext()) {
@@ -132,7 +131,7 @@ public class TransactionManager {
         System.out.println("Transaction " + tid + " begins");
     }
 
-    public void end(List<String> arguments) throws LockError, DataError {
+    public void end(List<String> arguments) throws DataError {
         String tid = arguments.get(1);
         Transaction transaction = transactions.get(tid);
 
@@ -147,7 +146,7 @@ public class TransactionManager {
         }
     }
 
-    public void abort(String tid, boolean siteFail, int commitTime) throws LockError, DataError {
+    public void abort(String tid, boolean siteFail, int commitTime) throws DataError {
         // Abort the transaction on each site
         for (DataManager site : sites) {
             site.abort(tid);
@@ -164,7 +163,7 @@ public class TransactionManager {
         operations.removeIf(operation -> operation.getTid().equals(tid));
     }
 
-    public void commit(String tid, int commitTime) throws LockError, DataError {
+    public void commit(String tid, int commitTime) throws DataError {
         // Commit the transaction on each site
         for (DataManager site : sites) {
             if ( !site.checkCommit(tid) ){
@@ -177,31 +176,10 @@ public class TransactionManager {
         }
         // Remove the transaction from the transactions map
         transactions.remove(tid);
-
+        operations.removeIf(operation -> operation.getTid().equals(tid));
         // Print commit information
         System.out.println(tid + " commits at time " + commitTime + ".");
     }
-
-//    public boolean snapshotRead(String tid, String vid) throws TransactionError {
-//        Transaction transaction = transactions.get(tid);
-//        if (transaction == null) {
-//            throw new TransactionError("Transaction " + tid + " doesn't exist.");
-//        }
-//
-//        int timestamp = transaction.getTimestamp();
-//        for (DataManager site : sites) {
-//            if (site.isUp() && site.hasVariable(vid)) {
-//                ResultValue resultValue = site.snapshotRead(vid, timestamp);
-//                if (resultValue.isSuccess()) {
-//                    System.out.println("Read-only transaction " + tid + " reads " + vid + "." + site.getSid() + ": " + resultValue.getValue());
-//                    return true;
-//                }
-//            }
-//        }
-//
-//        System.out.println("Read-only transaction " + tid + " failed to read " + vid + ": no suitable site.");
-//        return false;
-//    }
 
     public void addReadOperation(String tid, String vid) throws TransactionError {
         Transaction transaction = transactions.get(tid);
@@ -221,26 +199,39 @@ public class TransactionManager {
         operations.add(new WriteOperation(tid, vid, value));
     }
 
-    public boolean read(String tid, String vid) throws TransactionError, DataError, LockError {
+    public boolean read(String tid, String vid) throws TransactionError, DataError {
         Transaction transaction = transactions.get(tid);
         if (transaction == null) {
             throw new TransactionError("Transaction " + tid + " hasn't begun, read operation fails.");
         }
 
+        boolean wait = false;
         for (DataManager site : sites) {
-            if (site.isUp() && site.hasVariable(vid)) {
-                ResultValue resultValue = site.read(tid, vid, transaction.getTimestamp());
-                if (resultValue.isSuccess()) {
-                    transaction.getVisitedSites().add(site.getSid());
-                    System.out.println("Transaction " + tid + " reads " + vid + "." + site.getSid() + ": " + resultValue.getValue());
-                    return true;
+            if (site.hasVariable(vid)) {
+                if (site.isUp()) {
+                    ResultValue resultValue = site.read(tid, vid, transaction.getTimestamp());
+                    if (resultValue.isSuccess()) {
+                        transaction.getVisitedSites().add(site.getSid());
+                        System.out.println("Transaction " + tid + " reads " + vid + "." + site.getSid() + ": " + resultValue.getValue());
+                        return true;
+                    }
+                }
+                else {
+                    if (site.getFailTimestamp() > transaction.getTimestamp()) {
+                        wait = true;
+                        System.out.println("Transaction " + tid + " reads " + vid + "." + site.getSid() + " is waiting for it recover");
+                    }
                 }
             }
         }
 
+        if (!wait) {
+            abort(tid, false, timestamp);
+        }
+
         return false;
     }
-    public boolean write(String tid, String vid, int value) throws TransactionError, LockError {
+    public boolean write(String tid, String vid, int value) throws TransactionError {
         Transaction transaction = transactions.get(tid);
         if (transaction == null) {
             throw new TransactionError("Transaction " + tid + " doesn't exist, write operation fails.");
@@ -249,11 +240,6 @@ public class TransactionManager {
         List<Integer> targetSites = new ArrayList<>();
         for (DataManager site : sites) {
             if (site.hasVariable(vid) && site.isUp()) {
-//                boolean writeLock = site.getWriteLock(tid, vid);
-//                if (!writeLock) {
-//                    System.out.println(tid + " waits due to write lock conflict. Current lock: " + site.getLockTable().get(vid).getCurrentLock());
-//                    return false;
-//                }
                 targetSites.add(site.getSid());
             }
         }
@@ -288,7 +274,7 @@ public class TransactionManager {
             throw new TransactionError("Site " + sid + " is already down.");
         }
 
-        site.fail(sid);
+        site.fail(this.timestamp);
         System.out.println("Site " + sid + " fails.");
 
         for (Transaction trans : transactions.values()) {
@@ -311,7 +297,7 @@ public class TransactionManager {
         System.out.println("Site " + sid + " recovers.");
     }
 
-//    public boolean detectDeadlock() throws LockError, DataError {
+//    public boolean detectDeadlock() throws DataError {
 //        // Generate the blocking graph
 //        Map<String, Set<String>> blockingGraph = deadlockDetector.generateBlockingGraph(sites);
 //
@@ -320,7 +306,7 @@ public class TransactionManager {
 //
 //        if (victimTid != null) {
 //            System.out.println("Found deadlock, aborts the youngest transaction " + victimTid);
-//            abort(victimTid, false);  // false indicating it's due to deadlock, not site failure
+//            abort(victimTid, false, timestamp);  // false indicating it's due to deadlock, not site failure
 //            return true;
 //        }
 //        return false;

@@ -1,7 +1,6 @@
 package com.example;
 
 import com.example.data.DataError;
-import com.example.lock.LockError;
 import com.example.transaction.TransactionError;
 import com.example.transaction.TransactionManager;
 import com.example.utils.ParserError;
@@ -28,7 +27,7 @@ public class Main {
             System.err.println("Error, cannot open " + inputFilePath);
             e.printStackTrace();
             System.exit(1);
-        } catch (DataError | ParserError | TransactionError | LockError e) {
+        } catch (DataError | ParserError | TransactionError e) {
             e.printStackTrace();
         }
 

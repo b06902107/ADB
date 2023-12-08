@@ -1,7 +1,5 @@
 package com.example.data;
 
-import com.example.lock.LockManager;
-
 import java.util.*;
 
 public class Variable {
@@ -30,17 +28,21 @@ public class Variable {
         return commitValueList.size();
     }
 
-    public int getReadValue(int timestamp) {
-        Iterator iteratorVals = commitValueList.iterator();
+    public int getReadValue(int timestamp, int lastTimestamp) {
+        // System.out.println(timestamp + " " + lastTimestamp);
+        Iterator<Value> iteratorVals = commitValueList.iterator();
 
         // prints the elements using an iterator
         while (iteratorVals.hasNext()) {
             CommitValue now = (CommitValue) iteratorVals.next();
+            if (now.getCommitTime() < lastTimestamp) {
+                break;
+            }
             if (now.getCommitTime() < timestamp){
                 return now.getValue();
             }
         }
-        return commitValueList.peekLast().getValue();
+        return -1;
     }
 
     public void addCommitValue(Value v) {
@@ -54,14 +56,6 @@ public class Variable {
         }
         return temporaryValueList.get(tid);
     }
-
-
-//    public int getTemporaryValue() throws DataError {
-//        if (temporaryValue == null) {
-//            throw new DataError("Variable " + vid + " has no temporary value.");
-//        }
-//        return temporaryValue.getValue();
-//    }
 
     public void setTemporaryValue(TemporaryValue value){
         temporaryValueList.put(value.getTid(), value);
