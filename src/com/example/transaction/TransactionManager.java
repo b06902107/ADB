@@ -3,7 +3,6 @@ import com.example.data.DataError;
 import com.example.data.DataManager;
 import com.example.data.ResultValue;
 
-import com.example.utils.DeadlockDetector;
 import com.example.utils.Parser;
 import com.example.utils.ParserError;
 
@@ -11,7 +10,6 @@ import javax.xml.crypto.Data;
 import java.util.*;
 
 public class TransactionManager {
-    private DeadlockDetector deadlockDetector;
     private Parser parser;
     private Map<String, Transaction> transactions;
     private int timestamp;
@@ -23,7 +21,6 @@ public class TransactionManager {
         this.transactions = new HashMap<>();
         this.timestamp = 0;
         this.operations = new ArrayDeque<>();
-        this.deadlockDetector = new DeadlockDetector();
 
         this.sites = new ArrayList<>();
         for (int i = 1; i <= 10; i++) {
@@ -36,11 +33,6 @@ public class TransactionManager {
         if (arguments == null || arguments.isEmpty()) {
             return;
         }
-
-//        if (detectDeadlock()) {
-//            executeOperations();
-//            System.out.println();
-//        }
         System.out.println("------- Time " + timestamp + " -------");
         processCommand(arguments);
         executeOperations();
@@ -296,20 +288,5 @@ public class TransactionManager {
         site.recover(this.timestamp);
         System.out.println("Site " + sid + " recovers.");
     }
-
-//    public boolean detectDeadlock() throws DataError {
-//        // Generate the blocking graph
-//        Map<String, Set<String>> blockingGraph = deadlockDetector.generateBlockingGraph(sites);
-//
-//        // Detect deadlocks
-//        String victimTid = deadlockDetector.detect(transactions, blockingGraph);
-//
-//        if (victimTid != null) {
-//            System.out.println("Found deadlock, aborts the youngest transaction " + victimTid);
-//            abort(victimTid, false, timestamp);  // false indicating it's due to deadlock, not site failure
-//            return true;
-//        }
-//        return false;
-//    }
 
 }

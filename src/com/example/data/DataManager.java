@@ -131,47 +131,6 @@ public class DataManager {
         return this.failTimestamp.get(this.failTimestamp.size() - 1);
     }
 
-
-//    public Map<String, Set<String>> generateBlockingGraph() {
-//        Map<String, Set<String>> blockingGraph = new HashMap<>();
-//
-//        for (LockManager lockManager : lockTable.values()) {
-//            Lock currentLock = lockManager.getCurrentLock();
-//            if (currentLock == null || lockManager.getLockQueue().isEmpty()) {
-//                continue;
-//            }
-//
-//            for (Lock lock : lockManager.getLockQueue()) {
-//                if (isConflict(currentLock, lock)) {
-//                    if (currentLock.getLockType() == LockType.R) {
-//                        for (String sharedLockTid : lockManager.getSharedReadLock()) {
-//                            if (!sharedLockTid.equals(lock.getTid())) {
-//                                blockingGraph.computeIfAbsent(lock.getTid(), k -> new HashSet<>()).add(sharedLockTid);
-//                            }
-//                        }
-//                    } else {
-//                        blockingGraph.computeIfAbsent(lock.getTid(), k -> new HashSet<>()).add(currentLock.getTid());
-//                    }
-//                }
-//            }
-//
-//            // Process conflicts within the lock queue
-//            List<Lock> lockQueueList = new ArrayList<>(lockManager.getLockQueue());
-//            for (int i = 0; i < lockQueueList.size(); i++) {
-//                Lock lock1 = lockQueueList.get(i);
-//                for (int j = 0; j < i; j++) {
-//                    Lock lock2 = lockQueueList.get(j);
-//                    if (isConflict(lock2, lock1)) {
-//                        blockingGraph.computeIfAbsent(lock1.getTid(), k -> new HashSet<>()).add(lock2.getTid());
-//                    }
-//                }
-//            }
-//        }
-//
-//
-//        return blockingGraph;
-//    }
-
     public boolean isUp(){
         return isUp;
     }
