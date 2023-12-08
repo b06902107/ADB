@@ -35,7 +35,7 @@ public class DataManager {
                 data.put(vid, new Variable(vid, initValue, isReplicated));
             }
             // Create lock table for each variable
-            lockTable.put(vid, new LockManager(vid));
+            //lockTable.put(vid, new LockManager(vid));
         }
     }
 
@@ -45,31 +45,9 @@ public class DataManager {
     }
 
     // Method to perform a snapshot read
-    public ResultValue snapshotRead(String vid, int timestamp) {
-        Variable v = data.get(vid);
-        if (!v.isReadable()) {
-            return new ResultValue(-1, false);
-        } else {
-            for (Value commitValue : v.getCommitValueList()) {
-                if (commitValue instanceof CommitValue) {
-                    CommitValue cValue = (CommitValue) commitValue;
-                    if (cValue.getCommitTime() <= timestamp) {
-                        if (v.isReplicated()) {
-                            for (int t : failTimestamp) {
-                                if (cValue.getCommitTime() < t && t <= timestamp) {
-                                    return new ResultValue(-1, false);
-                                }
-                            }
-                        }
-                        return new ResultValue(cValue.getValue(), true);
-                    }
-                }
-            }
-            return new ResultValue(-1, false);
-        }
-    }
 
-    public ResultValue read(String tid, String vid) throws LockError, DataError {
+
+    public ResultValue read(String tid, String vid, int timestamp) throws LockError, DataError {
         Variable v = data.get(vid);
 
         // If the variable is not readable or does not exist, return a failed read
@@ -77,123 +55,124 @@ public class DataManager {
             System.out.println(tid + " failed to read " + vid + "." + sid + " [Site just recovered, not readable]");
             return new ResultValue(-1, false);
         } else {
-            LockManager lockManager = lockTable.get(vid);
-            Lock currentLock = lockManager.getCurrentLock();
+            //LockManager lockManager = lockTable.get(vid);
+            //Lock currentLock = lockManager.getCurrentLock();
 
             // If there's no lock on the variable, set a read lock then read directly
-            if (currentLock == null) {
-                lockManager.setCurrentLock(new ReadLock(tid, vid));
-                return new ResultValue(v.getLastCommitValue(), true);
-            }
+//            if (currentLock == null) {
+//                lockManager.setCurrentLock(new ReadLock(tid, vid));
+//                return new ResultValue(v.getLastCommitValue(), true);
+//            }
+            return new ResultValue(v.getReadValue(timestamp), true);
 
             // There is a read lock on the variable
-            if (currentLock.getLockType() == LockType.R) {
-                // If the transaction shares the read lock, then it can read the variable
-                if (lockManager.getSharedReadLock().contains(tid)) {
-                    return new ResultValue(v.getLastCommitValue(), true);
-                } else {
-                    // The transaction doesn't share the read lock, and there are other write
-                    // locks waiting in front, so the read lock should wait in queue.
-                    if (lockManager.hasWriteLock()) {
-                        lockManager.addLockToQueue(new ReadLock(tid, vid));
-                        System.out.println(tid + " failed to read " + vid + "." + sid + " [Exist write locks waiting in front]");
-                        return new ResultValue(-1, false);
-                    } else {
-                        // Share the current read lock and return the read value
-                        lockManager.shareCurrentLock(tid);
-                        return new ResultValue(v.getLastCommitValue(), true);
-                    }
-                }
-            } else {
-                // There is a Write lock on the variable
-                if (tid.equals(currentLock.getTid())) {
-                    // If current transaction holds the Write lock, read the temporary value
-                    return new ResultValue(v.getTemporaryValue(), true);
-                } else {
-                    lockManager.addLockToQueue(new ReadLock(tid, vid));
-                    System.out.println(tid + " failed to read " + vid + "." + sid + " [Lock conflict]");
-                    return new ResultValue(-1, false);
-                }
-            }
+//            if (currentLock.getLockType() == LockType.R) {
+//                // If the transaction shares the read lock, then it can read the variable
+//                if (lockManager.getSharedReadLock().contains(tid)) {
+//                    return new ResultValue(v.getLastCommitValue(), true);
+//                } else {
+//                    // The transaction doesn't share the read lock, and there are other write
+//                    // locks waiting in front, so the read lock should wait in queue.
+//                    if (lockManager.hasWriteLock()) {
+//                        lockManager.addLockToQueue(new ReadLock(tid, vid));
+//                        System.out.println(tid + " failed to read " + vid + "." + sid + " [Exist write locks waiting in front]");
+//                        return new ResultValue(-1, false);
+//                    } else {
+//                        // Share the current read lock and return the read value
+//                        lockManager.shareCurrentLock(tid);
+//                        return new ResultValue(v.getLastCommitValue(), true);
+//                    }
+//                }
+//            } else {
+//                // There is a Write lock on the variable
+//                if (tid.equals(currentLock.getTid())) {
+//                    // If current transaction holds the Write lock, read the temporary value
+//                    return new ResultValue(v.getTemporaryValue(), true);
+//                } else {
+//                    lockManager.addLockToQueue(new ReadLock(tid, vid));
+//                    System.out.println(tid + " failed to read " + vid + "." + sid + " [Lock conflict]");
+//                    return new ResultValue(-1, false);
+//                }
+//            }
         }
     }
 
-    public boolean getWriteLock(String tid, String vid) {
-        // Retrieve LockManager for the variable identified by vid
-        LockManager lockManager = lockTable.get(vid);
-        Lock currentLock = lockManager.getCurrentLock();
-
-        // There is no lock on the variable currently
-        if (currentLock == null) {
-            return true;
-        } else {
-            if (currentLock.getLockType() == LockType.R) {
-                if (lockManager.getSharedReadLock().size() != 1) {
-                    // Multiple transactions are holding the read lock
-                    lockManager.addLockToQueue(new WriteLock(tid, vid));
-                    return false;
-                } else {
-                    // If the current lock is a read lock held only by the requesting transaction
-                    if (lockManager.getSharedReadLock().contains(tid)) {
-                        if (!lockManager.hasOtherWriteLock(tid)) {
-                            // The transaction holds the read lock and no other write locks are waiting
-                            return true;
-                        } else {
-                            lockManager.addLockToQueue(new WriteLock(tid, vid));
-                            return false;
-                        }
-                    } else {
-                        // Other transactions are holding the read lock
-                        lockManager.addLockToQueue(new WriteLock(tid, vid));
-                        return false;
-                    }
-                }
-            } else {
-                // If the current lock is type W
-                // There is a Write lock on the variable
-                if (currentLock.getTid().equals(tid)) {
-                    return true; // The current transaction already holds the Write lock
-                } else {
-                    lockManager.addLockToQueue(new WriteLock(tid, vid));
-                    return false;
-                }
-            }
-        }
-    }
+//    public boolean getWriteLock(String tid, String vid) {
+//        // Retrieve LockManager for the variable identified by vid
+//        LockManager lockManager = lockTable.get(vid);
+//        Lock currentLock = lockManager.getCurrentLock();
+//
+//        // There is no lock on the variable currently
+//        if (currentLock == null) {
+//            return true;
+//        } else {
+//            if (currentLock.getLockType() == LockType.R) {
+//                if (lockManager.getSharedReadLock().size() != 1) {
+//                    // Multiple transactions are holding the read lock
+//                    lockManager.addLockToQueue(new WriteLock(tid, vid));
+//                    return false;
+//                } else {
+//                    // If the current lock is a read lock held only by the requesting transaction
+//                    if (lockManager.getSharedReadLock().contains(tid)) {
+//                        if (!lockManager.hasOtherWriteLock(tid)) {
+//                            // The transaction holds the read lock and no other write locks are waiting
+//                            return true;
+//                        } else {
+//                            lockManager.addLockToQueue(new WriteLock(tid, vid));
+//                            return false;
+//                        }
+//                    } else {
+//                        // Other transactions are holding the read lock
+//                        lockManager.addLockToQueue(new WriteLock(tid, vid));
+//                        return false;
+//                    }
+//                }
+//            } else {
+//                // If the current lock is type W
+//                // There is a Write lock on the variable
+//                if (currentLock.getTid().equals(tid)) {
+//                    return true; // The current transaction already holds the Write lock
+//                } else {
+//                    lockManager.addLockToQueue(new WriteLock(tid, vid));
+//                    return false;
+//                }
+//            }
+//        }
+//    }
 
     public void write(String tid, String vid, int value) throws LockError {
-        LockManager lockManager = lockTable.get(vid);
+        //LockManager lockManager = lockTable.get(vid);
         Variable v = data.get(vid);
 
         // Basic checks
-        if (lockManager == null || v == null) {
-            throw new IllegalStateException("LockManager or Variable not found for " + vid);
-        }
+        //if (lockManager == null || v == null) {
+        //    throw new IllegalStateException("LockManager or Variable not found for " + vid);
+        //}
 
-        Lock currentLock = lockManager.getCurrentLock();
-
-        if (currentLock == null) {
-            lockManager.setCurrentLock(new WriteLock(tid, vid));
-            v.setTemporaryValue(new TemporaryValue(value, tid));
-        } else {
-            if (currentLock.getLockType() == LockType.R) {
-                if (lockManager.getSharedReadLock().size() == 1 &&
-                        lockManager.getSharedReadLock().contains(tid) &&
-                        !lockManager.hasOtherWriteLock(tid)) {
-
-                    lockManager.promoteCurrentLock(new WriteLock(tid, vid));
-                    v.setTemporaryValue(new TemporaryValue(value, tid));
-                } else {
-                    throw new IllegalStateException("Cannot promote read lock to write lock for " + vid);
-                }
-            } else {
-                if (currentLock.getTid().equals(tid)) {
-                    v.setTemporaryValue(new TemporaryValue(value, tid));
-                } else {
-                    throw new IllegalStateException("Write lock conflict for " + vid);
-                }
-            }
-        }
+//        Lock currentLock = lockManager.getCurrentLock();
+//
+//        if (currentLock == null) {
+            //lockManager.setCurrentLock(new WriteLock(tid, vid));
+        v.setTemporaryValue(new TemporaryValue(value, tid, v.getCommitTimes()));
+//        } else {
+//            if (currentLock.getLockType() == LockType.R) {
+//                if (lockManager.getSharedReadLock().size() == 1 &&
+//                        lockManager.getSharedReadLock().contains(tid) &&
+//                        !lockManager.hasOtherWriteLock(tid)) {
+//
+//                    lockManager.promoteCurrentLock(new WriteLock(tid, vid));
+//                    v.setTemporaryValue(new TemporaryValue(value, tid));
+//                } else {
+//                    throw new IllegalStateException("Cannot promote read lock to write lock for " + vid);
+//                }
+//            } else {
+//                if (currentLock.getTid().equals(tid)) {
+//                    v.setTemporaryValue(new TemporaryValue(value, tid));
+//                } else {
+//                    throw new IllegalStateException("Write lock conflict for " + vid);
+//                }
+//            }
+//        }
     }
 
     public void dump() {
@@ -211,74 +190,74 @@ public class DataManager {
         System.out.println(output.toString());
     }
 
-    public void abort(String tid) throws LockError {
-        for (LockManager lockManager : lockTable.values()) {
-            lockManager.releaseCurrentLock(tid);
-            lockManager.removeLockFromQueue(tid);
+    public void abort(String tid) throws LockError, DataError {
+        for (Variable v : data.values()) {
+            v.removeTemporaryValue(tid);
         }
-        updateLockTable();
     }
 
-    public void commit(String tid, int commitTime) throws LockError {
-        // Release locks
-        for (LockManager lockManager : lockTable.values()) {
-            lockManager.releaseCurrentLock(tid);
-        }
+    public boolean checkCommit(String tid) throws DataError {
+        for (Variable v : data.values()) {
+            TemporaryValue tempValue = v.getTemporaryValue(tid);
+            if (tempValue != null && tempValue instanceof TemporaryValue) {
+                int oldTimes = tempValue.getCommitTimes();
+                int nowTimes = v.getCommitTimes();
 
+                // System.out.println("sid: " + sid + " vid " + v.getVid() + " " + oldValue + " " + nowValue);
+                if (oldTimes != nowTimes) { return false; }
+            }
+        }
+        return true;
+    }
+    public void commit(String tid, int commitTime) throws LockError, DataError {
         // Commit temporary values
         for (Variable v : data.values()) {
-            Value tempValue = v.getTemp();
+            TemporaryValue tempValue = v.getTemporaryValue(tid);
             if (tempValue != null && tempValue instanceof TemporaryValue) {
-                TemporaryValue tempVal = (TemporaryValue) tempValue;
-                if (tempVal.getTid().equals(tid)) {
-                    int commitValue = tempVal.getValue();
-                    v.addCommitValue(new CommitValue(commitValue, commitTime));
-                    v.setTemporaryValue(null); // Assuming this method accepts null
-                    v.setReadable(true);
-                }
+                int commitValue = tempValue.getValue();
+                v.addCommitValue(new CommitValue(commitValue, commitTime));
+                v.removeTemporaryValue(tid);
+                // v.setTemporaryValue(null); // Assuming this method accepts null
+                v.setReadable(true);
             }
         }
-        updateLockTable();
     }
 
-    public void updateLockTable() throws LockError {
-        for (LockManager lockManager : lockTable.values()) {
-            if (lockManager.getCurrentLock() != null) {
-                continue; // Skip if there's already a current lock
-            }
-
-            if (lockManager.getLockQueue().isEmpty()) {
-                continue; // Skip if no locks are waiting
-            }
-
-            Lock firstWaitingLock = lockManager.getLockQueue().pollFirst(); // First lock in queue
-            lockManager.setCurrentLock(firstWaitingLock);
-
-            if (firstWaitingLock.getLockType() == LockType.R && !lockManager.getLockQueue().isEmpty()) {
-                Lock nextLock = lockManager.getLockQueue().peekFirst();
-                while (nextLock != null && nextLock.getLockType() == LockType.R) {
-                    lockManager.getSharedReadLock().add(nextLock.getTid());
-                    lockManager.getLockQueue().pollFirst(); // Remove the processed read lock
-                    nextLock = lockManager.getLockQueue().peekFirst();
-                }
-
-                // The next lock is either null (empty queue) or a write lock
-                if (nextLock != null && lockManager.getSharedReadLock().size() == 1 &&
-                        nextLock.getTid().equals(lockManager.getSharedReadLock().peekFirst())) {
-                    lockManager.promoteCurrentLock(new WriteLock(nextLock.getTid(), nextLock.getVid()));
-                    lockManager.getLockQueue().pollFirst(); // Remove the promoted lock
-                }
-            }
-
-        }
-    }
+//    public void updateLockTable() throws LockError {
+//        for (LockManager lockManager : lockTable.values()) {
+//            if (lockManager.getCurrentLock() != null) {
+//                continue; // Skip if there's already a current lock
+//            }
+//
+//            if (lockManager.getLockQueue().isEmpty()) {
+//                continue; // Skip if no locks are waiting
+//            }
+//
+//            Lock firstWaitingLock = lockManager.getLockQueue().pollFirst(); // First lock in queue
+//            lockManager.setCurrentLock(firstWaitingLock);
+//
+//            if (firstWaitingLock.getLockType() == LockType.R && !lockManager.getLockQueue().isEmpty()) {
+//                Lock nextLock = lockManager.getLockQueue().peekFirst();
+//                while (nextLock != null && nextLock.getLockType() == LockType.R) {
+//                    lockManager.getSharedReadLock().add(nextLock.getTid());
+//                    lockManager.getLockQueue().pollFirst(); // Remove the processed read lock
+//                    nextLock = lockManager.getLockQueue().peekFirst();
+//                }
+//
+//                // The next lock is either null (empty queue) or a write lock
+//                if (nextLock != null && lockManager.getSharedReadLock().size() == 1 &&
+//                        nextLock.getTid().equals(lockManager.getSharedReadLock().peekFirst())) {
+//                    lockManager.promoteCurrentLock(new WriteLock(nextLock.getTid(), nextLock.getVid()));
+//                    lockManager.getLockQueue().pollFirst(); // Remove the promoted lock
+//                }
+//            }
+//
+//        }
+//    }
 
     public void fail(int timestamp) {
         this.isUp = false;
         this.failTimestamp.add(timestamp);
-        for (LockManager lockManager : lockTable.values()) {
-            lockManager.clear();
-        }
     }
 
     public void recover(int timestamp) {

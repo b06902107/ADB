@@ -8,6 +8,7 @@ import com.example.utils.DeadlockDetector;
 import com.example.utils.Parser;
 import com.example.utils.ParserError;
 
+import javax.xml.crypto.Data;
 import java.util.*;
 
 public class TransactionManager {
@@ -37,10 +38,10 @@ public class TransactionManager {
             return;
         }
 
-        if (detectDeadlock()) {
-            executeOperations();
-            System.out.println();
-        }
+//        if (detectDeadlock()) {
+//            executeOperations();
+//            System.out.println();
+//        }
         System.out.println("------- Time " + timestamp + " -------");
         processCommand(arguments);
         executeOperations();
@@ -48,18 +49,13 @@ public class TransactionManager {
         System.out.println();
     }
 
-    public void processCommand(List<String> arguments) throws TransactionError, LockError {
+    public void processCommand(List<String> arguments) throws TransactionError, LockError, DataError {
         String cmd = arguments.get(0);
 
         switch (cmd) {
             case "begin":
                 assert arguments.size() == 2;
                 begin(arguments);
-                break;
-
-            case "beginRO":
-                assert arguments.size() == 2;
-                beginRO(arguments);
                 break;
 
             case "end":
@@ -113,7 +109,7 @@ public class TransactionManager {
             boolean isSuccess;
             if (operation.getOperationType() == OperationType.R) {
                 Transaction transaction = transactions.get(tid);
-                isSuccess = transaction.isReadOnly() ? snapshotRead(tid, vid) : read(tid, vid);
+                isSuccess = read(tid, vid);
             } else { // OperationType.WRITE
                 WriteOperation writeOperation = (WriteOperation) operation;
                 isSuccess = write(tid, vid, writeOperation.getValue());
@@ -136,17 +132,7 @@ public class TransactionManager {
         System.out.println("Transaction " + tid + " begins");
     }
 
-    public void beginRO(List<String> arguments) throws TransactionError {
-        String tid = arguments.get(1);
-        if(transactions.containsKey(tid)){
-            throw new TransactionError("Transaction " + tid + " has already begun.");
-        }
-        Transaction transaction = new Transaction(tid, timestamp, true);
-        transactions.put(tid, transaction);
-        System.out.println("Transaction " + tid + " begins");
-    }
-
-    public void end(List<String> arguments) throws LockError {
+    public void end(List<String> arguments) throws LockError, DataError {
         String tid = arguments.get(1);
         Transaction transaction = transactions.get(tid);
 
@@ -155,32 +141,67 @@ public class TransactionManager {
         }
 
         if (transaction.isAborted()) {
-            abort(tid, true);
+            abort(tid, true, timestamp);
         } else {
             commit(tid, timestamp);
         }
     }
 
-    public boolean snapshotRead(String tid, String vid) throws TransactionError {
-        Transaction transaction = transactions.get(tid);
-        if (transaction == null) {
-            throw new TransactionError("Transaction " + tid + " doesn't exist.");
+    public void abort(String tid, boolean siteFail, int commitTime) throws LockError, DataError {
+        // Abort the transaction on each site
+        for (DataManager site : sites) {
+            site.abort(tid);
         }
 
-        int timestamp = transaction.getTimestamp();
+        // Remove the transaction from the transactions map
+        transactions.remove(tid);
+
+        // Determine the abort reason
+        // String abortReason = siteFail ? "Site Failed" : "Deadlock";
+        System.out.println(tid + " aborts at time " + commitTime + ".");
+
+        // Remove all operations related to the aborted transaction from the queue
+        operations.removeIf(operation -> operation.getTid().equals(tid));
+    }
+
+    public void commit(String tid, int commitTime) throws LockError, DataError {
+        // Commit the transaction on each site
         for (DataManager site : sites) {
-            if (site.isUp() && site.hasVariable(vid)) {
-                ResultValue resultValue = site.snapshotRead(vid, timestamp);
-                if (resultValue.isSuccess()) {
-                    System.out.println("Read-only transaction " + tid + " reads " + vid + "." + site.getSid() + ": " + resultValue.getValue());
-                    return true;
-                }
+            if ( !site.checkCommit(tid) ){
+                abort(tid, false, timestamp);
+                return;
             }
         }
+        for (DataManager site : sites) {
+            site.commit(tid, commitTime);
+        }
+        // Remove the transaction from the transactions map
+        transactions.remove(tid);
 
-        System.out.println("Read-only transaction " + tid + " failed to read " + vid + ": no suitable site.");
-        return false;
+        // Print commit information
+        System.out.println(tid + " commits at time " + commitTime + ".");
     }
+
+//    public boolean snapshotRead(String tid, String vid) throws TransactionError {
+//        Transaction transaction = transactions.get(tid);
+//        if (transaction == null) {
+//            throw new TransactionError("Transaction " + tid + " doesn't exist.");
+//        }
+//
+//        int timestamp = transaction.getTimestamp();
+//        for (DataManager site : sites) {
+//            if (site.isUp() && site.hasVariable(vid)) {
+//                ResultValue resultValue = site.snapshotRead(vid, timestamp);
+//                if (resultValue.isSuccess()) {
+//                    System.out.println("Read-only transaction " + tid + " reads " + vid + "." + site.getSid() + ": " + resultValue.getValue());
+//                    return true;
+//                }
+//            }
+//        }
+//
+//        System.out.println("Read-only transaction " + tid + " failed to read " + vid + ": no suitable site.");
+//        return false;
+//    }
 
     public void addReadOperation(String tid, String vid) throws TransactionError {
         Transaction transaction = transactions.get(tid);
@@ -208,7 +229,7 @@ public class TransactionManager {
 
         for (DataManager site : sites) {
             if (site.isUp() && site.hasVariable(vid)) {
-                ResultValue resultValue = site.read(tid, vid);
+                ResultValue resultValue = site.read(tid, vid, transaction.getTimestamp());
                 if (resultValue.isSuccess()) {
                     transaction.getVisitedSites().add(site.getSid());
                     System.out.println("Transaction " + tid + " reads " + vid + "." + site.getSid() + ": " + resultValue.getValue());
@@ -228,11 +249,11 @@ public class TransactionManager {
         List<Integer> targetSites = new ArrayList<>();
         for (DataManager site : sites) {
             if (site.hasVariable(vid) && site.isUp()) {
-                boolean writeLock = site.getWriteLock(tid, vid);
-                if (!writeLock) {
-                    System.out.println(tid + " waits due to write lock conflict. Current lock: " + site.getLockTable().get(vid).getCurrentLock());
-                    return false;
-                }
+//                boolean writeLock = site.getWriteLock(tid, vid);
+//                if (!writeLock) {
+//                    System.out.println(tid + " waits due to write lock conflict. Current lock: " + site.getLockTable().get(vid).getCurrentLock());
+//                    return false;
+//                }
                 targetSites.add(site.getSid());
             }
         }
@@ -290,52 +311,19 @@ public class TransactionManager {
         System.out.println("Site " + sid + " recovers.");
     }
 
-    public void abort(String tid, boolean siteFail) throws LockError {
-        // Abort the transaction on each site
-        for (DataManager site : sites) {
-            site.abort(tid);
-        }
-
-        // Remove the transaction from the transactions map
-        transactions.remove(tid);
-
-        // Determine the abort reason
-        String abortReason = siteFail ? "Site Failed" : "Deadlock";
-        System.out.println(tid + " aborts. [" + abortReason + "]");
-
-        // Remove all operations related to the aborted transaction from the queue
-        operations.removeIf(operation -> operation.getTid().equals(tid));
-    }
-
-    public void commit(String tid, int commitTime) throws LockError {
-        // Commit the transaction on each site
-        for (DataManager site : sites) {
-            site.commit(tid, commitTime);
-        }
-
-        // Remove the transaction from the transactions map
-        transactions.remove(tid);
-
-        // Print commit information
-        System.out.println(tid + " commits at time " + commitTime + ".");
-    }
-
-    public boolean detectDeadlock() throws LockError {
-        // Generate the blocking graph
-        Map<String, Set<String>> blockingGraph = deadlockDetector.generateBlockingGraph(sites);
-
-        // Detect deadlocks
-        String victimTid = deadlockDetector.detect(transactions, blockingGraph);
-
-        if (victimTid != null) {
-            System.out.println("Found deadlock, aborts the youngest transaction " + victimTid);
-            abort(victimTid, false);  // false indicating it's due to deadlock, not site failure
-            return true;
-        }
-        return false;
-    }
-
-
-
+//    public boolean detectDeadlock() throws LockError, DataError {
+//        // Generate the blocking graph
+//        Map<String, Set<String>> blockingGraph = deadlockDetector.generateBlockingGraph(sites);
+//
+//        // Detect deadlocks
+//        String victimTid = deadlockDetector.detect(transactions, blockingGraph);
+//
+//        if (victimTid != null) {
+//            System.out.println("Found deadlock, aborts the youngest transaction " + victimTid);
+//            abort(victimTid, false);  // false indicating it's due to deadlock, not site failure
+//            return true;
+//        }
+//        return false;
+//    }
 
 }
